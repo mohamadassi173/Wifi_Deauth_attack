@@ -15,8 +15,9 @@
 ### 4) choose the desired network. 
 ![choose network](https://user-images.githubusercontent.com/57872327/113326679-ab79f600-9322-11eb-9e80-bb6704e7e3b6.jpeg)
 ### 5) choose the desired client device MAC you want to attack.
+[insert picture later]
 ## 6) Start deauthentacting attack !!
-
+[insert picture later]
 
 
 ###### made by:
