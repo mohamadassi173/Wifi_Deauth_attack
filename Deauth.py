@@ -16,6 +16,8 @@ victim_mac = ""
 i2 = 0
 tic = time.perf_counter()
 ch = 1
+devices = dict()
+HMAP = dict()
 
 
 def main():
@@ -96,10 +98,6 @@ def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=
     # Print New Line on Complete
     if iteration == total:
         print()
-
-
-devices = dict()
-HMAP = dict()
 
 
 def callback(pkt):
